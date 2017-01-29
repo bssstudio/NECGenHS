@@ -4,6 +4,7 @@ module PSO where
 import System.Random
 import Data.List
 import Control.Monad
+import Control.Concurrent.ParallelIO.Local
 
 type PSOParam = Double
 
@@ -80,12 +81,12 @@ updateVelocity g (vel, pos) (personalBest, swarmBest) (omega, phiP, phiG) = (npa
   nparam = (omega * vel) + (phiP * rp * (personalBest - pos)) + (phiG * rg * (swarmBest - pos))
 
 
-updatePos :: [PSOParam] -> [PSOParam] -> [PSOParam]
-updatePos = zipWith (+)
+updatePos :: [PSOParam] -> [PSOParam] -> [PSOParamDesc] -> [PSOParam]
+updatePos pos vel bounds = zipWith3 (\p v (lo, hi) -> let np = p + v in min hi $ max lo np) pos vel bounds
 
 
-updateParticle :: (RandomGen g) => g -> (PSOParam, PSOParam, PSOParam) ->  Particle -> PSOMetric -> [PSOParam] -> (Particle, g)
-updateParticle g (omega, phiP, phiG) part fvalue swarmBest = (npart, ng) where
+updateParticle :: (RandomGen g) => g -> (PSOParam, PSOParam, PSOParam) ->  Particle -> PSOMetric -> [PSOParam] -> [PSOParamDesc]-> (Particle, g)
+updateParticle g (omega, phiP, phiG) part fvalue swarmBest descs = (npart, ng) where
   params = partParams part
   personalBest = partPersonalBest part
   personalBestMetric = partPersonalBestMetric part
@@ -93,7 +94,7 @@ updateParticle g (omega, phiP, phiG) part fvalue swarmBest = (npart, ng) where
   fvel (velpos, bests) (lst, gen) = (nvel:lst, ng) where  
     (nvel, ng) = updateVelocity gen velpos bests (omega, phiP, phiG)
   (nvel, ng) = foldr fvel ([], g) (zip (zip velocity params) (zip personalBest swarmBest)) 
-  npart = part { partParams = updatePos params nvel
+  npart = part { partParams = updatePos params nvel descs
                , partVelocity = nvel
                , partPersonalBest = if (fvalue < personalBestMetric) then params else personalBest
                , partPersonalBestMetric = if (fvalue < personalBestMetric) then fvalue else personalBestMetric
@@ -109,6 +110,9 @@ optEvalIO :: Optimization -> ([PSOParam] -> IO PSOMetric) -> IO [(Particle, PSOM
 optEvalIO opt f = mapM (\part -> fmap (\v -> (part, v)) $ f $ partParams part) (optParticles opt)
 
 
+optEvalParIO :: Int -> Optimization -> ([PSOParam] -> IO PSOMetric) -> IO [(Particle, PSOMetric)]
+optEvalParIO n opt f = withPool n $ \pool -> parallel pool $ map (\part -> fmap (\v -> (part, v)) $ f $ partParams part) (optParticles opt)
+
 
 updateOpt :: (RandomGen g) => g -> Optimization -> [(Particle, PSOMetric)] -> (Optimization, g)
 updateOpt g opt evals' = (nopt, ng) where
@@ -120,7 +124,7 @@ updateOpt g opt evals' = (nopt, ng) where
   phiG = optPhiG opt 
   phiP = optPhiP opt
   fpar (part, fval) (lst, gen) = (npart:lst, ng) where
-    (npart, ng) = updateParticle gen (omega, phiP, phiG) part fval swarmBest
+    (npart, ng) = updateParticle gen (omega, phiP, phiG) part fval swarmBest (optDesc opt)
   (nparts, ng) = foldr fpar ([], g) evals
   -- update optimization
   nopt = opt { optBest = swarmBest
@@ -176,10 +180,13 @@ runOptIO g opt f n = go where
     runOpt' initg initopt n
 
   runOpt' g opt 0 = return (opt, g)
-  runOpt' g opt n = do
-    evals <- optEvalIO opt f
+  runOpt' g opt i = do
+    evals <- optEvalParIO 16 opt f
     let (nsopt, nsg) = updateOpt g opt evals
-    runOpt' nsg nsopt (n-1)
+    --when ((optBestMetric nsopt) < (optBestMetric opt)) $ do 
+    --  print ((optBestMetric nsopt), optBest nsopt, n-i)
+    print ((optBestMetric nsopt), optBest nsopt, n-i)
+    runOpt' nsg nsopt (i-1)
 
 
 
