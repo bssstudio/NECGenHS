@@ -15,7 +15,9 @@ data Wire = Wire {
              , rad :: Double
              } deriving (Show, Eq)
 
-defaultRad = 0.0025 / 2.0
+defaultRad = 0.006 / 2.0
+--defaultRad = 0.0025 / 2.0
+--defaultRad = 0.001 / 2.0
 
 defaultWire = Wire {
                      tag = 0
@@ -114,13 +116,17 @@ printGeometry sim = (intercalate "\n" $ map printNEC $ reverse $ geo sim) ++ "\n
 printSim sfreq efreq steps ground sim = out where
   stepsize = (efreq - sfreq) / (fromIntegral steps)
   (exTag, exSeg) = excitation sim
+  (thStart, thStepSize, thSteps) = rpTheta sim
+  (phiStart, phiStepSize, phiSteps) = rpTheta sim
   out = ("CM -- hsnecgen --\nCE\n") ++ (printGeometry sim) ++ (intercalate "\n" [
       "EX     0     "++(show exTag)++"     "++(show exSeg)++"      0  1.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00"
     , "FR     0    "++ (show steps) ++"     0      0  "++(show sfreq)++"  "++(show stepsize)++"  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00"
     , "NH     0     0     0      0  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00"
     , "NE     0    10     1     10 -1.35000E+00  0.00000E+00 -1.35000E+00  3.00000E-01  0.00000E+00  3.00000E-01"
     , if ground then "GN     1     0     0      0  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00" else ""
-    , "RP     0    "++ (if ground then "19" else "37") ++ "    37   1000 "++ (if ground then "-90" else "0") ++ "  0.00000E+00  1.00000E+01  1.00000E+01  0.00000E+00  0.00000E+00"
+    --, "RP     0    "++ (if ground then "19" else "37") ++ "    37   1000 "++ (if ground then "-90" else "0") ++ "  0.00000E+00  1.00000E+01  1.00000E+01  0.00000E+00  0.00000E+00"
+    --, "RP     0     1     1  1000  9.00000E+01  9.00000E+01  1.00000E+01  1.00000E+01  0.00000E+00  0.00000E+00"
+    , "RP     0     "++(show thSteps)++"    "++(show phiSteps)++"   1000  "++(show thStart)++"  "++(show phiStart)++"  "++(show thStepSize)++"  "++(show phiStepSize)++"  0.00000E+00  0.00000E+00"
     , "EN     0     0     0      0  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00"
     , ""
     ])
@@ -129,9 +135,11 @@ data NECSim = NECSim {
                        geo :: [NEC]
                      , nextTag :: Int
                      , excitation :: (Int, Int)
+                     , rpTheta :: (Double, Double, Int)
+                     , rpPhi :: (Double, Double, Int)
                      } deriving Show
 
-emptySim = NECSim { geo = [], nextTag = 1 , excitation = (1, 8)}
+emptySim = NECSim { geo = [], nextTag = 1 , excitation = (1, 8), rpTheta = (90, 10, 37), rpPhi = (90, 10, 37)}
 
 addToSim :: NEC -> NECSim -> NECSim 
 addToSim n sim = sim { geo = n : (geo sim) }
@@ -140,6 +148,8 @@ addToSimTag :: (Int -> NEC) -> NECSim -> NECSim
 addToSimTag n sim = sim { geo = (n (nextTag sim)) : (geo sim) }
 
 
+setSimRP :: (Double, Double, Int) -> (Double, Double, Int) -> NECSim -> NECSim
+setSimRP theta phi sim = sim { rpTheta = theta, rpPhi = phi }
 
 
 incTag :: NECSim -> NECSim 
